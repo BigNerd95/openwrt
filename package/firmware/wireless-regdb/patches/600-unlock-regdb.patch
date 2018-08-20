@@ -1,0 +1,19 @@
+--- a/db.txt
++++ b/db.txt
+@@ -92,13 +92,9 @@ country AT: DFS-ETSI
+ # In order to allow 80MHz operation between 5650-5730MHz the upper boundary
+ # of this more restrictive band has been shifted up by 5MHz from 5725MHz.
+ country AU: DFS-ETSI
+-	(2400 - 2483.5 @ 40), (36)
+-	(5150 - 5250 @ 80), (23), NO-OUTDOOR, AUTO-BW
+-	(5250 - 5350 @ 80), (20), NO-OUTDOOR, AUTO-BW, DFS
+-	(5470 - 5600 @ 80), (27), DFS
+-	(5650 - 5730 @ 80), (27), DFS
+-	(5730 - 5850 @ 80), (36)
+-	(57000 - 66000 @ 2160), (43), NO-OUTDOOR
++	(2400 - 2494 @ 40), (36)
++	(4910 - 5875 @ 160), (36)
++	(57000 - 66000 @ 2160), (43)
+ 
+ country AW: DFS-ETSI
+ 	(2402 - 2482 @ 40), (20)
