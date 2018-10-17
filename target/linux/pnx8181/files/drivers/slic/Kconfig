@@ -1,0 +1,11 @@
+#
+# Cordless configuration
+#
+
+menu "SLIC Device"
+
+config SLIC
+	tristate "SLIC SI3216 Device"
+	default n
+
+endmenu

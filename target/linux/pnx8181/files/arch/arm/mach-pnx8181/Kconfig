@@ -1,0 +1,82 @@
+if ARCH_PNX8181
+
+menu "PNX8181 Options"
+
+config ARCH_PNX8181_DBGPRINTK
+	bool "Early debug printk"
+	help
+	  This enables early uart console output.
+
+config ARCH_PNX8181_LOADSIM
+	bool "FIQ load simulation"
+	select FIQ
+	help
+	  Simulates FIQ load on the system using the FSI interrupt.
+
+config ARCH_PNX8181_LOADSIM_TIMINGS
+	bool "Enable timings"
+	default n
+	depends on ARCH_PNX8181_LOADSIM
+	help
+	  Gathers some timing information, similar to a performance counter.
+	  Only useful if you're using a (hardware-)debugger.
+
+choice
+	prompt "External Interrupt SC IRQ"
+	default ARCH_PNX8181_EXTINT_IRQ3
+	help
+	  Select which CPU Interrupt should be used for the external interrupt
+	  controller. All external sources will be mapped to this IRQ and handled
+	  by the irq-ext module
+	  .
+	  If unsure use EXTINT_IRQ3
+
+config ARCH_PNX8181_EXTINT_IRQ1
+	bool "EXTINT_IRQ1"
+
+config ARCH_PNX8181_EXTINT_IRQ2
+	bool "EXTINT_IRQ2"
+
+config ARCH_PNX8181_EXTINT_IRQ3
+	bool "EXTINT_IRQ3"
+
+endchoice
+
+config ARCH_PNX8181_EXTINT_BASE
+	int "Base of the virtual EXTINT IRQs"
+	default 100
+	help
+	  The external sources are mapped to a non CPU Interrupt vector of the Linux
+	  Kernel. This is the base of these Interrupts. You must not use a number
+	  which overruns the NR_IRQS defined for your architecture.
+	  .
+	  If unsure set 100
+
+config ARCH_PNX8181_DISABLE_WFI
+	bool "Disable switching to wait-for-interrupt in idle routine"
+	default y
+	help
+	  Disable switching to wait-for-interrupt in idle routine; use busy-loop
+	  instead.
+
+config ARCH_PNX8181_CRASH_LOG_ON_FLASH
+	bool "Enable crash log on flash"
+	default n
+	help
+	  Store recent printk-output on NOR flash in case of a kernel panic
+
+config ARCH_PNX8181_CRASH_LOG_PARTITION
+	int "Number of MTD partition to store kernel crash log"
+	default 2
+	depends on ARCH_PNX8181_CRASH_LOG_ON_FLASH
+	help
+	  This enables early uart console output.
+
+config ARCH_PNX8181_KERNEL_WATCHDOG
+	bool "Enable watchdog timer at kernel startup"
+	help
+	  This enables the watchdog timer which is updated in the timer interrupt handler.
+
+endmenu
+
+endif

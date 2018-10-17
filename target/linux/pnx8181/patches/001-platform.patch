@@ -1,0 +1,56 @@
+--- a/arch/arm/Kconfig
++++ b/arch/arm/Kconfig
+@@ -786,6 +786,13 @@ config ARCH_OMAP1
+ 	help
+ 	  Support for older TI OMAP1 (omap7xx, omap15xx or omap16xx)
+ 
++config ARCH_PNX8181
++	bool "NXP PNX8181"
++	select GENERIC_GPIO
++	select FIQ
++	help
++	  Support for the NXP Semiconductors PNX8181 base band IC.
++
+ endchoice
+ 
+ menu "Multiple platform selection"
+@@ -975,6 +982,8 @@ source "arch/arm/mach-w90x900/Kconfig"
+ 
+ source "arch/arm/mach-zynq/Kconfig"
+ 
++source "arch/arm/mach-pnx8181/Kconfig"
++
+ # Definitions to make life easier
+ config ARCH_ACORN
+ 	bool
+@@ -1522,6 +1531,7 @@ config HZ_FIXED
+ 	default 200 if ARCH_EBSA110 || ARCH_S3C24XX || \
+ 		ARCH_S5PV210 || ARCH_EXYNOS4
+ 	default AT91_TIMER_HZ if ARCH_AT91
++	default 250 if ARCH_PNX8181
+ 	default SHMOBILE_TIMER_HZ if ARCH_SHMOBILE_LEGACY
+ 	default 0
+ 
+@@ -1790,6 +1800,12 @@ config XEN
+ 	help
+ 	  Say Y if you want to run Linux in a Virtual Machine on Xen on ARM.
+ 
++if ARCH_PNX8181
++source "drivers/cordless/Kconfig"
++
++source "drivers/slic/Kconfig"
++endif
++
+ endmenu
+ 
+ menu "Boot options"
+--- a/arch/arm/Makefile
++++ b/arch/arm/Makefile
+@@ -196,6 +196,7 @@ machine-$(CONFIG_ARCH_OMAP1)		+= omap1
+ machine-$(CONFIG_ARCH_OMAP2PLUS)	+= omap2
+ machine-$(CONFIG_ARCH_ORION5X)		+= orion5x
+ machine-$(CONFIG_ARCH_PICOXCELL)	+= picoxcell
++machine-$(CONFIG_ARCH_PNX8181)		+= pnx8181
+ machine-$(CONFIG_ARCH_PXA)		+= pxa
+ machine-$(CONFIG_ARCH_QCOM)		+= qcom
+ machine-$(CONFIG_ARCH_REALVIEW)		+= realview

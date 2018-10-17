@@ -1,0 +1,18 @@
+#
+# Cordless configuration
+#
+
+menu "Cordless support"
+
+config CORDLESS
+	tristate "Cordless support"
+	default n
+
+config CORDLESS_DEBUG
+	tristate "Cordless debug support"
+	depends on CORDLESS
+	default y
+	help
+	  Debug output from cordless can be retrieved by reading from /dev/cordless
+
+endmenu

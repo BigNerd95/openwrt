@@ -1,0 +1,361 @@
+--- a/arch/arm/Kconfig
++++ b/arch/arm/Kconfig
+@@ -1,4 +1,4 @@
+-#
++
+ # For a description of the syntax of this configuration file,
+ # see Documentation/kbuild/kconfig-language.txt.
+ #
+@@ -480,6 +480,13 @@
+ 	  and controls some vital subsystems (clock and power control, etc).
+ 	  <http://www.cdmatech.com/products/msm7200_chipset_solution.jsp>
+ 
++config ARCH_PNX8181
++	bool "NXP PNX8181"
++	select GENERIC_GPIO
++	select FIQ
++	help
++	  Support for the NXP Semiconductors PNX8181 base band IC.
++
+ endchoice
+ 
+ source "arch/arm/mach-clps711x/Kconfig"
+@@ -552,6 +559,8 @@
+ 
+ source "arch/arm/mach-msm/Kconfig"
+ 
++source "arch/arm/mach-pnx8181/Kconfig"
++
+ # Definitions to make life easier
+ config ARCH_ACORN
+ 	bool
+@@ -730,6 +739,7 @@
+ 	default 200 if ARCH_EBSA110 || ARCH_S3C2410
+ 	default OMAP_32K_TIMER_HZ if ARCH_OMAP && OMAP_32K_TIMER
+ 	default AT91_TIMER_HZ if ARCH_AT91
++	default 250 if ARCH_PNX8181
+ 	default 100
+ 
+ config AEABI
+@@ -1181,6 +1191,12 @@
+ 
+ source "drivers/uio/Kconfig"
+ 
++if ARCH_PNX8181
++source "drivers/cordless/Kconfig"
++
++source "drivers/slic/Kconfig"
++endif
++
+ endmenu
+ 
+ source "fs/Kconfig"
+--- a/arch/arm/kernel/debug.S
++++ b/arch/arm/kernel/debug.S
+@@ -10,6 +10,7 @@
+  *  32-bit debugging code
+  */
+ #include <linux/linkage.h>
++#include <asm/hardware.h>
+ 
+ 		.text
+ 
+--- a/arch/arm/kernel/process.c
++++ b/arch/arm/kernel/process.c
+@@ -135,9 +135,16 @@
+ 		local_irq_disable();
+ 		if (!need_resched()) {
+ 			timer_dyn_reprogram();
++#ifndef CONFIG_ARCH_PNX8181_DISABLE_WFI
+ 			arch_idle();
++#endif
+ 		}
+ 		local_irq_enable();
++
++#ifdef CONFIG_ARCH_PNX8181_DISABLE_WFI
++		while (!need_resched())
++			cpu_relax();
++#endif
+ 	}
+ }
+ 
+--- a/arch/arm/kernel/traps.c
++++ b/arch/arm/kernel/traps.c
+@@ -205,24 +205,72 @@
+ #define S_SMP ""
+ #endif
+ 
++#ifdef CONFIG_ARCH_PNX8181_CRASH_LOG_ON_FLASH
++#include <linux/mtd/mtd.h>
++extern char *log_buf;
++#endif
++extern unsigned long get_und_sp(void);
++extern unsigned long get_und_lr(void);
++
+ static void __die(const char *str, int err, struct thread_info *thread, struct pt_regs *regs)
+ {
+ 	struct task_struct *tsk = thread->task;
+ 	static int die_counter;
++#ifdef CONFIG_ARCH_PNX8181_CRASH_LOG_ON_FLASH
++	int dummy;
++	struct mtd_info *nor_flash;
++#endif
+ 
+ 	printk("Internal error: %s: %x [#%d]" S_PREEMPT S_SMP "\n",
+ 	       str, err, ++die_counter);
+-	print_modules();
++	if (processor_mode(regs) != UND_MODE)
++		print_modules();
++	else {
++		regs->ARM_sp = get_und_sp();
++		regs->ARM_lr = get_und_lr();
++	}
++
+ 	__show_regs(regs);
+-	printk("Process %s (pid: %d, stack limit = 0x%p)\n",
+-		tsk->comm, task_pid_nr(tsk), thread + 1);
++	if (processor_mode(regs) != UND_MODE) {
++		printk("Process %s (pid: %d, stack limit = 0x%p)\n",
++			tsk->comm, task_pid_nr(tsk), thread + 1);
++	}
+ 
+ 	if (!user_mode(regs) || in_interrupt()) {
+-		dump_mem("Stack: ", regs->ARM_sp,
+-			 THREAD_SIZE + (unsigned long)task_stack_page(tsk));
+-		dump_backtrace(regs, tsk);
+-		dump_instr(regs);
++		if (processor_mode(regs) == UND_MODE) {
++			dump_mem("Stack: ", regs->ARM_sp, 0xD002E800);
++			dump_instr(regs);
++#ifdef CONFIG_ARCH_PNX8181_CRASH_LOG_ON_FLASH
++			nor_flash = get_mtd_device(NULL,
++			            CONFIG_ARCH_PNX8181_CRASH_LOG_PARTITION);
++			if (nor_flash) {
++				int i;
++				char dummy_buf[1024];
++
++				nor_flash->read(nor_flash, 0x0, 1024, &dummy, dummy_buf);
++				for (i = 0; i < 1024; i++) {
++					if (dummy_buf[i] != 0xff) {
++						printk("crash log partition not erased - not updating\n");
++						i = 0;
++						break;
++					}
++				}
++				if (i != 0) {
++					printk("writing to crash log partition...\n");
++					nor_flash->write(nor_flash, 0x0,
++					                 (1 << CONFIG_LOG_BUF_SHIFT),
++					                 &dummy, log_buf);
++				}
++			}
++#endif
++		} else {
++			dump_mem("Stack: ", regs->ARM_sp,
++				 THREAD_SIZE + (unsigned long)task_stack_page(tsk));
++			dump_backtrace(regs, tsk);
++			dump_instr(regs);
++		}
+ 	}
++
+ }
+ 
+ DEFINE_SPINLOCK(die_lock);
+--- a/arch/arm/Makefile
++++ b/arch/arm/Makefile
+@@ -140,6 +140,7 @@
+  machine-$(CONFIG_ARCH_MX3)	   := mx3
+  machine-$(CONFIG_ARCH_ORION5X)	   := orion5x
+  machine-$(CONFIG_ARCH_MSM7X00A)   := msm
++ machine-$(CONFIG_ARCH_PNX8181)    := pnx8181
+ 
+ ifeq ($(CONFIG_ARCH_EBSA110),y)
+ # This is what happens if you forget the IOCS16 line.
+--- a/arch/arm/mm/Kconfig
++++ b/arch/arm/mm/Kconfig
+@@ -180,8 +180,8 @@
+ # ARM926T
+ config CPU_ARM926T
+ 	bool "Support ARM926T processor"
+-	depends on ARCH_INTEGRATOR || ARCH_VERSATILE_PB || MACH_VERSATILE_AB || ARCH_OMAP730 || ARCH_OMAP16XX || MACH_REALVIEW_EB || ARCH_PNX4008 || ARCH_NETX || CPU_S3C2412 || ARCH_AT91SAM9260 || ARCH_AT91SAM9261 || ARCH_AT91SAM9263 || ARCH_AT91SAM9RL || ARCH_AT91CAP9 || ARCH_NS9XXX || ARCH_DAVINCI
+-	default y if ARCH_VERSATILE_PB || MACH_VERSATILE_AB || ARCH_OMAP730 || ARCH_OMAP16XX || ARCH_PNX4008 || ARCH_NETX || CPU_S3C2412 || ARCH_AT91SAM9260 || ARCH_AT91SAM9261 || ARCH_AT91SAM9263 || ARCH_AT91SAM9RL || ARCH_AT91CAP9 || ARCH_NS9XXX || ARCH_DAVINCI
++	depends on ARCH_INTEGRATOR || ARCH_VERSATILE_PB || MACH_VERSATILE_AB || ARCH_OMAP730 || ARCH_OMAP16XX || MACH_REALVIEW_EB || ARCH_PNX4008 || ARCH_NETX || CPU_S3C2412 || ARCH_AT91SAM9260 || ARCH_AT91SAM9261 || ARCH_AT91SAM9263 || ARCH_AT91SAM9RL || ARCH_AT91CAP9 || ARCH_NS9XXX || ARCH_DAVINCI || ARCH_PNX8181
++	default y if ARCH_VERSATILE_PB || MACH_VERSATILE_AB || ARCH_OMAP730 || ARCH_OMAP16XX || ARCH_PNX4008 || ARCH_NETX || CPU_S3C2412 || ARCH_AT91SAM9260 || ARCH_AT91SAM9261 || ARCH_AT91SAM9263 || ARCH_AT91SAM9RL || ARCH_AT91CAP9 || ARCH_NS9XXX || ARCH_DAVINCI || ARCH_PNX8181
+ 	select CPU_32v5
+ 	select CPU_ABRT_EV5TJ
+ 	select CPU_PABRT_NOIFAR
+--- a/arch/arm/mm/mmu.c
++++ b/arch/arm/mm/mmu.c
+@@ -670,14 +670,24 @@
+ {
+ 	struct map_desc map;
+ 	unsigned long addr;
++	unsigned long vectors_phys;
++#ifndef CONFIG_VECTORS_ADDRESS
+ 	void *vectors;
++#endif
+ 
+ 	/*
+ 	 * Allocate the vector page early.
+ 	 */
++#ifdef CONFIG_VECTORS_ADDRESS
++	vectors_phys = CONFIG_VECTORS_ADDRESS;
++#else
+ 	vectors = alloc_bootmem_low_pages(PAGE_SIZE);
+ 	BUG_ON(!vectors);
+ 
++	vectors_phys = virt_to_phys(vectors);
++#endif
++
++
+ 	for (addr = VMALLOC_END; addr; addr += PGDIR_SIZE)
+ 		pmd_clear(pmd_off_k(addr));
+ 
+@@ -716,7 +726,7 @@
+ 	 * location (0xffff0000).  If we aren't using high-vectors, also
+ 	 * create a mapping at the low-vectors virtual address.
+ 	 */
+-	map.pfn = __phys_to_pfn(virt_to_phys(vectors));
++	map.pfn = __phys_to_pfn(vectors_phys);
+ 	map.virtual = 0xffff0000;
+ 	map.length = PAGE_SIZE;
+ 	map.type = MT_HIGH_VECTORS;
+--- a/arch/arm/mm/proc-arm926.S
++++ b/arch/arm/mm/proc-arm926.S
+@@ -4,6 +4,7 @@
+  *  Copyright (C) 1999-2001 ARM Limited
+  *  Copyright (C) 2000 Deep Blue Solutions Ltd.
+  *  hacked for non-paged-MM by Hyok S. Choi, 2003.
++ *  respect for locked cache ways added by Andre Schedelbeck, 2010
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+@@ -50,6 +51,7 @@
+  */
+ #define CACHE_DLINESIZE	32
+ 
++
+ 	.text
+ /*
+  * cpu_arm926_proc_init()
+@@ -129,18 +131,77 @@
+  *	Clean and invalidate the entire cache.
+  */
+ ENTRY(arm926_flush_kern_cache_all)
+-	mov	r2, #VM_EXEC
+-	mov	ip, #0
+-__flush_whole_cache:
++	mov     r2, #VM_EXEC
++
++__flush_whole_cache:                @ __flush_whole_cache(dummy,dummy,flags)
+ #ifdef CONFIG_CPU_DCACHE_WRITETHROUGH
+-	mcr	p15, 0, ip, c7, c6, 0		@ invalidate D cache
++	mov	    ip, #0
++	mcr	    p15, 0, ip, c7, c6, 0   @ invalidate D cache
+ #else
+-1:	mrc	p15, 0, r15, c7, c14, 3 	@ test,clean,invalidate
+-	bne	1b
++	mrc     p15, 0, r1, c9, c0, 0   @ read DCache LockDown
++	ands    r1, r1, #15
++	beq __flush_whole_D_nolock
++	eor     r1, r1, #15             @ clean and invalidate unlocked ways
++	mov     r0, #0
++__next_way_D:
++	tst     r1, #1
++	beq __way_done_D
++
++__flush_way_D:                      @ way in r0
++	mov     r3, r0, lsl #30
++	add     ip, r3, #0x2000         @ set/way for index 256
++D1:
++	sub     ip, ip, #0x0020         @ index from 255 down to 0
++	mcr     p15, 0, ip, c7, c14, 2
++	cmp     r3, ip
++	bne D1
++
++__way_done_D:
++	movs    r1, r1, lsr #1
++	beq __flush_whole_I_if_VM_EXEC
++	add     r0, r0, #1
++	b   __next_way_D
++    
++__flush_whole_D_nolock:
++	mrc	    p15, 0, r15, c7, c14, 3 @ test,clean,invalidate
++	bne	__flush_whole_D_nolock
+ #endif
+-	tst	r2, #VM_EXEC
+-	mcrne	p15, 0, ip, c7, c5, 0		@ invalidate I cache
+-	mcrne	p15, 0, ip, c7, c10, 4		@ drain WB
++
++__flush_whole_I_if_VM_EXEC:
++	tst	    r2, #VM_EXEC            @ VM_EXEC required to flush Icache
++	moveq   pc, lr
++
++__flush_whole_I:
++	mrc     p15,0,r1,c9,c0,1        @ read ICache LockDown
++	ands    r1,r1,#15
++	beq __flush_whole_I_nolock
++
++__flush_whole_I_notlocked:
++	eor     r1, #15                 @ clean and invalidate unlocked ways
++	mov     r0, #0
++__next_way_I:
++	tst     r1, #1
++	beq __way_done_I
++	
++__flush_way_I:                      @ way in r0
++	mov     r3, r0, lsl #30         @ set/way for index 0
++	add     ip, r3, #0x2000         @ set/way for index 256
++I1:
++	sub     ip, ip, #0x0020         @ index from 255 down to 0
++	mcr     p15, 0, ip, c7, c5, 2   @ invalidate
++	cmp     r3, ip
++	bne I1
++__way_done_I:
++	add     r0, r0, #1
++	movs    r1, r1, lsr #1
++	bne __next_way_I
++	mcr	    p15, 0, r1, c7, c10, 4  @ drain WB
++	mov     pc, lr
++
++__flush_whole_I_nolock:
++	mov	ip, #0
++	mcr	p15, 0, ip, c7, c5, 0		@ invalidate I cache
++	mcr	p15, 0, ip, c7, c10, 4		@ drain WB
+ 	mov	pc, lr
+ 
+ /*
+@@ -227,10 +288,7 @@
+ 	add	r0, r0, #CACHE_DLINESIZE
+ 	cmp	r0, r1
+ 	blo	1b
+-	mov	r0, #0
+-	mcr	p15, 0, r0, c7, c5, 0		@ invalidate I cache
+-	mcr	p15, 0, r0, c7, c10, 4		@ drain WB
+-	mov	pc, lr
++	b __flush_whole_I
+ 
+ /*
+  *	dma_inv_range(start, end)
+@@ -336,17 +394,11 @@
+ 	.align	5
+ ENTRY(cpu_arm926_switch_mm)
+ #ifdef CONFIG_MMU
++	stmdb sp!, {r0,lr}
++	bl  arm926_flush_kern_cache_all
++	ldmia sp!, {r0,lr}
+ 	mov	ip, #0
+-#ifdef CONFIG_CPU_DCACHE_WRITETHROUGH
+-	mcr	p15, 0, ip, c7, c6, 0		@ invalidate D cache
+-#else
+-@ && 'Clean & Invalidate whole DCache'
+-1:	mrc	p15, 0, r15, c7, c14, 3 	@ test,clean,invalidate
+-	bne	1b
+-#endif
+-	mcr	p15, 0, ip, c7, c5, 0		@ invalidate I cache
+-	mcr	p15, 0, ip, c7, c10, 4		@ drain WB
+-	mcr	p15, 0, r0, c2, c0, 0		@ load page table pointer
++	mcr	p15, 0, r0, c2, c0, 0		@ set page table pointer
+ 	mcr	p15, 0, ip, c8, c7, 0		@ invalidate I & D TLBs
+ #endif
+ 	mov	pc, lr
