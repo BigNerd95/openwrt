@@ -78,6 +78,7 @@ static __inline__ void blast_dcache(unsigned long size, unsigned long lsize)
 }
 
 #define TRX_MAGIC       0x30524448      /* "HDR0" */
+#define TRX_MAGIC_F7D4401       0x00018517      /* "HDR0" */
 
 struct trx_header {
 	unsigned int magic;		/* "HDR0" */
@@ -139,6 +140,7 @@ void entry(unsigned long icache_size, unsigned long icache_lsize,
 	/* look for trx header, 32-bit data access */
 	for (data = ((unsigned char *) KSEG1ADDR(BCM4710_FLASH));
 		((struct trx_header *)data)->magic != TRX_MAGIC &&
+		((struct trx_header *)data)->magic != TRX_MAGIC_F7D4401 &&
 		((struct trx_header *)data)->magic != EDIMAX_PS_HEADER_MAGIC;
 		 data += 65536);
 

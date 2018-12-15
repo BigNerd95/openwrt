@@ -170,7 +170,7 @@ configure_by_model() {
 		ucidef_add_switch "switch0" \
 			"0:wan" "1:lan:4" "2:lan:3" "3:lan:2" "4:lan:1" "8@eth0"
 		;;
-
+z
 	*)
 		configure_by_boardtype "$boardtype" "$boardnum"
 		;;

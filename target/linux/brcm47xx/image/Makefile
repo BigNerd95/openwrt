@@ -72,6 +72,17 @@ define Build/trx-v2-with-loader
 	mv $@.new $@
 endef
 
+define Build/trx-f7d4401-with-loader
+	$(STAGING_DIR_HOST)/bin/trx \
+		-m 33554432 \
+		-o $@.new \
+		-f $(KDIR)/loader.gz \
+		-f $(KDIR)/vmlinux.lzma \
+		$(call trxalign/$(FILESYSTEM),$@) \
+		-M 0x00018517
+	mv $@.new $@
+endef
+
 define Build/trx-without-loader
 	$(STAGING_DIR_HOST)/bin/trx \
 		-m 33554432 \
